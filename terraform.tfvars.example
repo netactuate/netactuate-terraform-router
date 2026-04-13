@@ -1,0 +1,7 @@
+api_key              = "your-api-key-here"
+location             = "LAX"
+plan                 = "VR2x2x25"
+router_name          = "my-router"
+local_asn            = "65002"
+remote_asn           = 65001
+bgp_neighbor_address = "192.168.1.1"
