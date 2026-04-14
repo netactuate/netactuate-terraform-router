@@ -3,6 +3,14 @@
 NetActuate Terraform Cloud Router -- deploy a cloud router with VRF, BGP peering, static routes,
 prefix lists, NAT rules, and advanced networking with a single `terraform apply`.
 
+### NetActuate Terraform Provider
+
+The NetActuate Terraform provider is installed automatically when you run `terraform init`.
+It is downloaded from the Terraform Registry and shared across all modules on your system.
+Each module in this collection is an independent, self-contained project with its own
+`main.tf`, `variables.tf`, and `outputs.tf` -- you can use any module on its own without
+the others.
+
 ## What This Deploys
 
 - A cloud router with NTP configuration
@@ -103,8 +111,8 @@ Site-to-site VPN using IKEv2 with AES-256 encryption and SHA-256 hashing.
 To enable:
 1. Uncomment the `netactuate_router_ipsec` and `netactuate_router_vrf_ipsec_peer` blocks
 2. Set `peer_address` to your remote VPN endpoint
-3. Set `pre_shared_key` to a strong shared secret
-4. Adjust `overlay_ip` for your tunnel addressing
+3. Set `psk_secret` to a strong shared secret
+4. Set `name`, `remote_id`, and adjust `overlay_ipv4` for your tunnel addressing
 
 ### WireGuard
 
@@ -114,7 +122,7 @@ created by default -- this section adds a peer to it.
 To enable:
 1. Uncomment the `netactuate_router_vrf_interface_wireguard_peer` block
 2. Set `public_key` to your peer's WireGuard public key
-3. Set `endpoint` to the peer's IP and port
+3. Set `remote` to the peer's IP and port
 4. Adjust `allowed_ips` for your network
 
 ### GRE Tunnels
@@ -123,8 +131,8 @@ Generic Routing Encapsulation tunnel for connecting to remote networks.
 
 To enable:
 1. Uncomment the `netactuate_router_vrf_tunnel` block
-2. Set `remote` to the far-end tunnel endpoint IP
-3. Adjust `ip_key` for tunnel addressing and `mtu` as needed
+2. Set `endpoint_address_remote` to the far-end tunnel endpoint IP
+3. Set `ip_key` (GRE key, integer), `name`, and `mtu` as needed
 
 ### DHCP Server
 
@@ -132,7 +140,7 @@ Run a DHCP server on the router to assign addresses to connected clients.
 
 To enable:
 1. Uncomment the `netactuate_router_vrf_dhcp` block
-2. Adjust `subnet`, `range`, `dns_servers`, and `ntp_servers` for your network
+2. Adjust `subnet`, `range`, `domain_name_servers`, and `ntp_servers` for your network
 3. **Important:** `ntp_servers.address` must be an IPv4 address, not a hostname -- hostnames
    will fail
 

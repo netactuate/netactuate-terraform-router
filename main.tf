@@ -25,13 +25,14 @@ resource "netactuate_router" "router" {
 
 resource "netactuate_router_ntp" "ntp" {
   router_id = netactuate_router.router.id
+  enabled   = true
 
-  server {
-    address = "0.pool.ntp.org"
+  upstreams {
+    domain = "0.pool.ntp.org"
   }
 
-  server {
-    address = "1.pool.ntp.org"
+  upstreams {
+    domain = "1.pool.ntp.org"
   }
 
   depends_on = [netactuate_router.router]
@@ -72,7 +73,7 @@ resource "netactuate_router_vrf_bgp" "bgp" {
   local_asn = var.local_asn
 
   networks {
-    cidr = "192.168.0.0/24"
+    subnet = "192.168.0.0/24"
   }
 
   depends_on = [netactuate_router_vrf_interface.wireguard]
@@ -94,49 +95,46 @@ resource "netactuate_router_vrf_bgp_neighbor" "peer" {
 # -----------------------------------------------------------------------------
 
 resource "netactuate_router_static_route" "default" {
-  router_id = netactuate_router.router.id
-  prefix    = "10.10.0.0/24"
-  next_hop  = "192.168.0.1"
-  interface = netactuate_router_vrf_interface.dummy.name
+  router_id    = netactuate_router.router.id
+  vrf_id       = netactuate_router.router.default_vrf_id
+  network      = "10.10.0.0/24"
+  next_hop     = "192.168.0.1"
+  interface_id = netactuate_router_vrf_interface.dummy.interface_id
 
   depends_on = [netactuate_router_vrf_bgp_neighbor.peer]
 }
 
 resource "netactuate_router_prefix_list" "ipv4" {
-  router_id = netactuate_router.router.id
-  name      = "ipv4-filter"
-  family    = "ipv4"
+  router_id  = netactuate_router.router.id
+  name       = "ipv4-filter"
+  ip_version = 4
 
   rule {
     action = "permit"
     prefix = "192.168.0.0/16"
-    le     = 24
   }
 
   rule {
     action = "deny"
     prefix = "0.0.0.0/0"
-    le     = 32
   }
 
   depends_on = [netactuate_router_static_route.default]
 }
 
 resource "netactuate_router_prefix_list" "ipv6" {
-  router_id = netactuate_router.router.id
-  name      = "ipv6-filter"
-  family    = "ipv6"
+  router_id  = netactuate_router.router.id
+  name       = "ipv6-filter"
+  ip_version = 6
 
   rule {
     action = "permit"
     prefix = "2001:db8::/32"
-    le     = 48
   }
 
   rule {
     action = "deny"
     prefix = "::/0"
-    le     = 128
   }
 
   depends_on = [netactuate_router_prefix_list.ipv4]
@@ -147,27 +145,33 @@ resource "netactuate_router_prefix_list" "ipv6" {
 # -----------------------------------------------------------------------------
 
 resource "netactuate_router_vrf_snat_rule" "outbound" {
-  router_id = netactuate_router.router.id
-  vrf_id    = netactuate_router.router.default_vrf_id
-
-  match {
-    interface = "eth0"
-    network   = "192.168.0.0/24"
-    port      = "1024-65535"
-  }
+  router_id          = netactuate_router.router.id
+  vrf_id             = netactuate_router.router.default_vrf_id
+  ip_version         = 4
+  protocol           = "TCP"
+  match_interface_id = netactuate_router_vrf_interface.dummy.interface_id
+  match_network      = "192.168.0.0/24"
+  match_port_start   = 1024
+  match_port_end     = 32000
+  translation_network    = "0.0.0.0/0"
+  translation_port_start = 1024
+  translation_port_end   = 32000
 
   depends_on = [netactuate_router_prefix_list.ipv6]
 }
 
 resource "netactuate_router_vrf_dnat_rule" "inbound" {
-  router_id = netactuate_router.router.id
-  vrf_id    = netactuate_router.router.default_vrf_id
-
-  match {
-    interface = "eth0"
-    network   = "0.0.0.0/0"
-    port      = "8080"
-  }
+  router_id          = netactuate_router.router.id
+  vrf_id             = netactuate_router.router.default_vrf_id
+  ip_version         = 4
+  protocol           = "TCP"
+  match_interface_id = netactuate_router_vrf_interface.dummy.interface_id
+  match_network      = "0.0.0.0/0"
+  match_port_start   = 8080
+  match_port_end     = 8080
+  translation_network    = "192.168.0.10/32"
+  translation_port_start = 80
+  translation_port_end   = 80
 
   depends_on = [netactuate_router_vrf_snat_rule.outbound]
 }
@@ -177,11 +181,13 @@ resource "netactuate_router_vrf_dnat_rule" "inbound" {
 # -----------------------------------------------------------------------------
 
 # resource "netactuate_router_ipsec" "config" {
-#   router_id       = netactuate_router.router.id
-#   ike_version     = 2
-#   encryption      = "aes256"
-#   hash            = "sha256"
-#   dh_group        = 14
+#   router_id                = netactuate_router.router.id
+#   ike_key_exchange_version = 2
+#   ike_encryption           = "aes256"
+#   ike_hash                 = "sha256"
+#   ike_dh_group_number      = 14
+#   esp_encryption           = "aes256"
+#   esp_hash                 = "sha256"
 #
 #   depends_on = [netactuate_router_vrf_dnat_rule.inbound]
 # }
@@ -189,9 +195,11 @@ resource "netactuate_router_vrf_dnat_rule" "inbound" {
 # resource "netactuate_router_vrf_ipsec_peer" "remote" {
 #   router_id              = netactuate_router.router.id
 #   vrf_id                 = netactuate_router.router.default_vrf_id
+#   name                   = "remote-site"
+#   remote_id              = "remote-router"
 #   peer_address           = "203.0.113.1"
-#   pre_shared_key         = "change-me-to-a-strong-secret"
-#   overlay_ip             = "10.255.0.1/30"
+#   psk_secret             = "change-me-to-a-strong-secret"
+#   overlay_ipv4           = "10.255.0.1/30"
 #   do_initiate_connection = true
 #
 #   depends_on = [netactuate_router_ipsec.config]
@@ -204,12 +212,12 @@ resource "netactuate_router_vrf_dnat_rule" "inbound" {
 # resource "netactuate_router_vrf_interface_wireguard_peer" "peer1" {
 #   router_id    = netactuate_router.router.id
 #   vrf_id       = netactuate_router.router.default_vrf_id
-#   interface_id = netactuate_router_vrf_interface.wireguard.id
+#   interface_id = netactuate_router_vrf_interface.wireguard.interface_id
 #   public_key   = "PEER_PUBLIC_KEY_BASE64"
-#   endpoint     = "203.0.113.2:51821"
+#   remote       = "203.0.113.2:51821"
 #
 #   allowed_ips {
-#     cidr = "10.0.0.2/32"
+#     network = "10.0.0.2/32"
 #   }
 #
 #   depends_on = [netactuate_router_vrf_interface.wireguard]
@@ -220,11 +228,13 @@ resource "netactuate_router_vrf_dnat_rule" "inbound" {
 # -----------------------------------------------------------------------------
 
 # resource "netactuate_router_vrf_tunnel" "gre" {
-#   router_id = netactuate_router.router.id
-#   vrf_id    = netactuate_router.router.default_vrf_id
-#   ip_key    = "10.255.1.1/30"
-#   mtu       = 1476
-#   remote    = "203.0.113.3"
+#   router_id              = netactuate_router.router.id
+#   vrf_id                 = netactuate_router.router.default_vrf_id
+#   name                   = "gre-tunnel-1"
+#   ip_key                 = 100
+#   mtu                    = 1476
+#   endpoint_address_remote = "203.0.113.3"
+#   ipv4_cidr              = "10.255.1.1/30"
 #
 #   depends_on = [netactuate_router_vrf_dnat_rule.inbound]
 # }
@@ -235,21 +245,22 @@ resource "netactuate_router_vrf_dnat_rule" "inbound" {
 # -----------------------------------------------------------------------------
 
 # resource "netactuate_router_vrf_dhcp" "lan" {
-#   router_id = netactuate_router.router.id
-#   vrf_id    = netactuate_router.router.default_vrf_id
-#
-#   subnet = "192.168.0.0/24"
+#   router_id    = netactuate_router.router.id
+#   vrf_id       = netactuate_router.router.default_vrf_id
+#   enabled      = true
+#   interface_id = netactuate_router_vrf_interface.dummy.interface_id
+#   subnet       = "192.168.0.0/24"
 #
 #   range {
-#     start = "192.168.0.100"
-#     stop  = "192.168.0.200"
+#     first_address = "192.168.0.100"
+#     last_address  = "192.168.0.200"
 #   }
 #
-#   dns_servers {
+#   domain_name_servers {
 #     address = "1.1.1.1"
 #   }
 #
-#   dns_servers {
+#   domain_name_servers {
 #     address = "8.8.8.8"
 #   }
 #
